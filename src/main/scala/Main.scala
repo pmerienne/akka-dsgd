@@ -1,18 +1,29 @@
-import akka.actor.{ActorSystem, Props, ActorRef}
+import scala.util.{Failure, Success}
+import scala.concurrent.ExecutionContext.Implicits.global
 
 object Main extends App {
 
-  val conf = Conf(15, 0.1, 0.1, 5, 3, 8)
+  val dsgd = DsgdApi()
+
   val data = MovieLensData();
+  data.train.foreach(rating => dsgd.add(rating))
 
-  val api = DSGDLauncher.launch(data.train, conf)
+  val startTime = System.currentTimeMillis()
+  dsgd.start() onComplete {
+    case Failure(failure) => {
+      println("Unable to finish DSGD : " + failure)
+      dsgd.shutdown()
+    }
 
+    case Success(result)  => {
+      println(s"DSGD finished in ${System.currentTimeMillis() - startTime}ms")
 
-  while(true) {
-    Thread.sleep(3000)
-    api ! RMSE(data.test)
+      val rmse = dsgd.rmse(data.test)
+      println(s"RMSE : ${rmse * 100}%")
+
+      dsgd.shutdown()
+    }
   }
-
 
 }
 

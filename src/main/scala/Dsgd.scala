@@ -4,24 +4,24 @@ import scala.util.Random
 
 import scala.concurrent.duration._
 
-case class StartDSGD()
+case class StartDsgd()
+case class DsgdFinished()
 
 case class BlockToProcess(p:Int, q:Int, iteration:Int)
 case class ProcessedBlock(p:Int, q:Int, iteration:Int)
 
 case class EmitBlock()
 
-case class BlockData(p:Int, q:Int, iteration:Int, up:LatentFeatureBlock, vq:LatentFeatureBlock, ratingBlock:RatingBlock)
-
-class DSGDMaster(matrixStore: ActorRef, conf:Conf) extends Actor with ActorLogging {
+class DsgdMaster(dataStore: DataStore, conf:Conf) extends Actor with ActorLogging {
   import context._
 
-  val workerRouter = context.actorOf(Props(new SGDWorker(matrixStore, self, conf)).withRouter(RoundRobinRouter(conf.nbWorkers)), name = "workerRouter")
+  val workerRouter = context.actorOf(Props(new SgdWorker(dataStore, self, conf)).withRouter(RoundRobinRouter(conf.nbWorkers)), name = "workerRouter")
 
   var unlockedQs:Set[Int] = Set()
   var unlockedPs:Set[Int] = Set()
 
   var schedule:Cancellable = null
+  var starter:ActorRef = null
 
 
   var availableBlocks:Set[BlockToProcess] = Set()
@@ -29,7 +29,7 @@ class DSGDMaster(matrixStore: ActorRef, conf:Conf) extends Actor with ActorLoggi
 
   def receive = {
     case EmitBlock() => emitRandomBlock()
-    case StartDSGD() => start()
+    case StartDsgd() => start()
     case ProcessedBlock(p, q ,iteration) => unlock(ProcessedBlock(p, q ,iteration))
   }
 
@@ -40,6 +40,7 @@ class DSGDMaster(matrixStore: ActorRef, conf:Conf) extends Actor with ActorLoggi
     availableBlocks = (for(p <- 0 until conf.d;q <- 0 until conf.d) yield BlockToProcess(p, q, 0)).toSet
 
     schedule = context.system.scheduler.schedule(5 milliseconds, 5 milliseconds, self, EmitBlock())
+    starter = sender
   }
 
   def unlock(block:ProcessedBlock) {
@@ -66,8 +67,8 @@ class DSGDMaster(matrixStore: ActorRef, conf:Conf) extends Actor with ActorLoggi
     })
 
     if(schedule != null && availableBlocks.isEmpty && processingBlocks.isEmpty) {
-      log.info("DSGD finished")
       schedule.cancel()
+      starter ! DsgdFinished()
     }
   }
 
@@ -78,13 +79,13 @@ class DSGDMaster(matrixStore: ActorRef, conf:Conf) extends Actor with ActorLoggi
 }
 
 
-class SGDWorker(dataStore: ActorRef, master: ActorRef, conf:Conf) extends Actor with ActorLogging {
+class SgdWorker(dataStore: DataStore, master: ActorRef, conf:Conf) extends Actor with ActorLogging {
 
   val λ = conf.λ
   val η = conf.η
 
-  def update(data:BlockData) = {
-    val step =  2 * η / (data.iteration + 1)
+  def update(data:BlockData, iteration:Int) = {
+    val step =  2 * η / (iteration + 1)
 
     val ratings = data.ratingBlock.shuffle()
     ratings.foreach(rating => {
@@ -103,14 +104,17 @@ class SGDWorker(dataStore: ActorRef, master: ActorRef, conf:Conf) extends Actor 
 
 
   def receive = {
-    case BlockToProcess(p, q, iteration) => dataStore ! BlockToProcess(p, q, iteration)
-    case data:BlockData=> {
-      log.debug("Processing {}, {}, {}", data.p, data.q, data.iteration)
-      update(data)
-      log.debug("Process of {}, {}, {} done", data.p, data.q, data.iteration)
+    case BlockToProcess(p, q, iteration) => {
+      log.debug("Processing {}, {}, {}", p, q, iteration)
 
-      dataStore ! data
-      master ! ProcessedBlock(data.p, data.q, data.iteration)
+      val data = dataStore.data(p, q)
+      update(data, iteration)
+
+      dataStore.store(data.up, data.vq)
+
+      log.debug("Process of {}, {}, {} done", p, q, iteration)
+
+      master ! ProcessedBlock(data.p, data.q, iteration)
     }
   }
 }

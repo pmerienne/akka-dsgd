@@ -1,13 +1,52 @@
-import akka.actor.{Actor, ActorRef, ActorLogging}
+import akka.actor.{Props, ActorSystem}
+import akka.pattern.ask
+import akka.util.Timeout
+import scala.concurrent.{Future, Await}
+import scala.concurrent.duration._
 
-case class RMSE(ratings:List[Rating])
+case class RMSERequest(ratings:List[Rating])
 
-class DsgdApi(dataStore: ActorRef) extends Actor with ActorLogging {
+case class Conf(k:Int = 10, η:Double = 0.1, λ:Double = 0.1, d:Int = 3, iterations:Int = 10, nbWorkers:Int = 8)
 
-  def receive = {
-    case Rating(i, j, value) => dataStore ! Rating(i, j , value)
-    case RMSE(ratings) => dataStore ! RMSE(ratings)
-    case rmse:Double => log.info("RMSE : " + rmse)
+case class DsgdApi(conf:Conf = Conf()) {
+
+  implicit val timeout = Timeout(30 minutes)
+
+  val system = ActorSystem("DSGD")
+  val dataStore = DataStore(conf)
+  val master = system.actorOf(Props(new DsgdMaster(dataStore, conf)), name = "dsgd-master")
+
+  def start():Future[Any] = {
+    master ? StartDsgd()
   }
+
+  def add(rating:Rating) = {
+    dataStore.store(rating)
+  }
+
+  def shutdown() = {
+    system.shutdown();
+  }
+
+
+  def rmse(ratings: List[Rating]): Double = {
+    var n = 0.0
+    var sum = 0.0
+
+    ratings.foreach(rating => {
+      n += 1.0
+      val prediction = predict(rating.i, rating.j)
+      sum += Math.pow((rating.value - prediction), 2.0)
+    })
+
+    Math.sqrt(sum / n)
+  }
+
+
+  def predict(i: Long, j: Long): Double = {
+    val (ui, vj) = dataStore.features(i, j)
+    ui.t * vj
+  }
+
 
 }
