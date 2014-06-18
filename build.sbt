@@ -1,6 +1,6 @@
 import _root_.sbt.Keys._
 
-name := "spark-dsgd"
+name := "akka-dsgd"
 
 version := "1.0"
 
