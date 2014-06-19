@@ -13,16 +13,13 @@ case class ProcessedBlock(p:Int, q:Int, iteration:Int)
 case class EmitBlock()
 
 class DsgdMaster(dataStore: DataStore, conf:Conf) extends Actor with ActorLogging {
-  import context._
 
-  val workerRouter = context.actorOf(Props(new SgdWorker(dataStore, self, conf)).withRouter(RoundRobinRouter(conf.nbWorkers)), name = "workerRouter")
+  val workerRouter = context.actorOf(Props(new SgdWorker(dataStore, conf)).withRouter(RoundRobinRouter(conf.nbWorkers)), name = "workerRouter")
 
   var unlockedQs:Set[Int] = Set()
   var unlockedPs:Set[Int] = Set()
 
-  var schedule:Cancellable = null
   var starter:ActorRef = null
-
 
   var availableBlocks:Set[BlockToProcess] = Set()
   var processingBlocks:Set[BlockToProcess] = Set()
@@ -39,8 +36,8 @@ class DsgdMaster(dataStore: DataStore, conf:Conf) extends Actor with ActorLoggin
     unlockedQs = List.range(0, conf.d).toSet
     availableBlocks = (for(p <- 0 until conf.d;q <- 0 until conf.d) yield BlockToProcess(p, q, 0)).toSet
 
-    schedule = context.system.scheduler.schedule(5 milliseconds, 5 milliseconds, self, EmitBlock())
     starter = sender
+    (0 until conf.nbWorkers).foreach(i => self ! EmitBlock())
   }
 
   def unlock(block:ProcessedBlock) {
@@ -54,9 +51,12 @@ class DsgdMaster(dataStore: DataStore, conf:Conf) extends Actor with ActorLoggin
     if (block.iteration < conf.iterations) {
       availableBlocks += BlockToProcess(block.p, block.q, block.iteration + 1)
     }
+
+    self ! EmitBlock()
   }
 
   private def emitRandomBlock() = {
+    log.debug("Emiting block")
     val block = Random.shuffle(availableBlocks.toList).find(block => unlockedPs.contains(block.p) && unlockedQs.contains(block.q))
     block.map(block => {
       availableBlocks -= block
@@ -66,8 +66,7 @@ class DsgdMaster(dataStore: DataStore, conf:Conf) extends Actor with ActorLoggin
       workerRouter ! block
     })
 
-    if(schedule != null && availableBlocks.isEmpty && processingBlocks.isEmpty) {
-      schedule.cancel()
+    if(starter != null && availableBlocks.isEmpty && processingBlocks.isEmpty) {
       starter ! DsgdFinished()
     }
   }
@@ -79,7 +78,7 @@ class DsgdMaster(dataStore: DataStore, conf:Conf) extends Actor with ActorLoggin
 }
 
 
-class SgdWorker(dataStore: DataStore, master: ActorRef, conf:Conf) extends Actor with ActorLogging {
+class SgdWorker(dataStore: DataStore, conf:Conf) extends Actor with ActorLogging {
 
   val λ = conf.λ
   val η = conf.η
@@ -105,6 +104,7 @@ class SgdWorker(dataStore: DataStore, master: ActorRef, conf:Conf) extends Actor
 
   def receive = {
     case BlockToProcess(p, q, iteration) => {
+      val start = System.currentTimeMillis()
       log.debug("Processing {}, {}, {}", p, q, iteration)
 
       val data = dataStore.data(p, q)
@@ -112,9 +112,9 @@ class SgdWorker(dataStore: DataStore, master: ActorRef, conf:Conf) extends Actor
 
       dataStore.store(data.up, data.vq)
 
-      log.debug("Process of {}, {}, {} done", p, q, iteration)
+      log.debug(s"Process of ${p}, ${q}, ${iteration} done in ${System.currentTimeMillis() - start}ms")
 
-      master ! ProcessedBlock(data.p, data.q, iteration)
+      sender ! ProcessedBlock(data.p, data.q, iteration)
     }
   }
 }

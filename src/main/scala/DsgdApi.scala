@@ -6,7 +6,7 @@ import scala.concurrent.duration._
 
 case class RMSERequest(ratings:List[Rating])
 
-case class Conf(k:Int = 10, η:Double = 0.1, λ:Double = 0.1, d:Int = 3, iterations:Int = 10, nbWorkers:Int = 8)
+case class Conf(k:Int = 20, η:Double = 0.2, λ:Double = 0.01, d:Int = 8, iterations:Int = 10, nbWorkers:Int = 8)
 
 case class DsgdApi(conf:Conf = Conf()) {
 
@@ -28,7 +28,6 @@ case class DsgdApi(conf:Conf = Conf()) {
     system.shutdown();
   }
 
-
   def rmse(ratings: List[Rating]): Double = {
     var n = 0.0
     var sum = 0.0
@@ -41,7 +40,6 @@ case class DsgdApi(conf:Conf = Conf()) {
 
     Math.sqrt(sum / n)
   }
-
 
   def predict(i: Long, j: Long): Double = {
     val (ui, vj) = dataStore.features(i, j)

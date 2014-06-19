@@ -5,7 +5,7 @@ object Main extends App {
 
   val dsgd = DsgdApi()
 
-  val data = MovieLensData();
+  val data = MovieLensData()
   data.train.foreach(rating => dsgd.add(rating))
 
   val startTime = System.currentTimeMillis()
@@ -19,8 +19,7 @@ object Main extends App {
       println(s"DSGD finished in ${System.currentTimeMillis() - startTime}ms")
 
       val rmse = dsgd.rmse(data.test)
-      println(s"RMSE : ${rmse * 100}%")
-
+      println(s"Test RMSE : ${rmse * 100}%")
       dsgd.shutdown()
     }
   }

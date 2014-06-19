@@ -6,10 +6,8 @@ case class MovieLensData(trainingPercent:Double = 0.90, filename:String = "src/m
     .fromFile(filename)
     .getLines()
     .map(_.split("\t"))
-    .map(values => Rating(values(0).toLong, values(1).toLong, values(2).toDouble / 5.0) )
+    .map(values => Rating(values(0).toLong, values(1).toLong, Math.sqrt(values(2).toDouble / 5.0) ))
     .toList
     .partition(rating => Random.nextDouble() <  trainingPercent)
-
-
 
 }
