@@ -6,7 +6,7 @@ import scala.concurrent.duration._
 
 case class RMSERequest(ratings:List[Rating])
 
-case class Conf(k:Int = 20, η:Double = 0.2, λ:Double = 0.01, d:Int = 8, iterations:Int = 10, nbWorkers:Int = 8)
+case class Conf(k:Int = 20, η:Double = 0.2, λ:Double = 0.01, d:Int = 8, iterations:Int = 30, nbWorkers:Int = 8)
 
 case class DsgdApi(conf:Conf = Conf()) {
 

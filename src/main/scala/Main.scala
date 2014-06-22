@@ -3,7 +3,8 @@ import scala.concurrent.ExecutionContext.Implicits.global
 
 object Main extends App {
 
-  val dsgd = DsgdApi()
+  val conf: Conf = Conf(k=50, η= 0.2, λ= 0.01, d=8, iterations= 30, nbWorkers= 8)
+  val dsgd = DsgdApi(conf)
 
   val data = MovieLensData()
   data.train.foreach(rating => dsgd.add(rating))
@@ -19,7 +20,7 @@ object Main extends App {
       println(s"DSGD finished in ${System.currentTimeMillis() - startTime}ms")
 
       val rmse = dsgd.rmse(data.test)
-      println(s"Test RMSE : ${rmse * 100}%")
+      println(s"RMSE : ${rmse * 100}%")
       dsgd.shutdown()
     }
   }
